@@ -73,12 +73,11 @@ jobs:
       - name: Clone ace
         run: git clone --depth 1 --branch "$ACE_REF" https://github.com/E3SM-Project/ace.git
 
-      - name: Install ace (uv venv + requirements + editable)
+      - name: Install ace (uv venv + editable install from pyproject)
         working-directory: ace
         run: |
           uv venv --python 3.11
           source .venv/bin/activate
-          uv pip install -r requirements.txt
           uv pip install -e .
 
       - name: Smoke imports + validate_config entry point
