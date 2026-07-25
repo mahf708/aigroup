@@ -1,0 +1,68 @@
+name: atlas-dev
+dt_hours: 6.0
+variables:
+  preset: era5_atlas
+  subset:
+  - u10m
+  - v10m
+  - t2m
+  - msl
+  - z500
+  - t850
+  - q850
+  - tcwv
+grid:
+  nlat: 49
+  nlon: 96
+  descending: true
+  periodic_lon: true
+  poles: true
+  name: latlon
+latent:
+  shape:
+  - 13
+  - 24
+  mode: bilinear
+  residual: true
+  history: 1
+  learned_encoder_dim: 256
+  learned_encoder_depth: 4
+backbone:
+  embed_dim_state: 128
+  embed_dim_history: 64
+  combine: concat
+  depth: 6
+  num_heads: 4
+  mlp_ratio: 4.0
+  patch:
+  - 2
+  - 3
+  attention: global
+  pos_embed: sincos2d
+  qk_norm: false
+  grad_checkpoint_every: null
+  noise_dim: null
+projector:
+  embed_dim_state: 96
+  embed_dim_latent: 32
+  depth: 4
+  num_heads: 4
+  mlp_ratio: 4.0
+  attention: neighborhood
+  kernel:
+  - 3
+  - 3
+  pos_embed: sincos2d
+  qk_norm: false
+  grad_checkpoint_every: null
+  neighborhood_chunk: 4096
+estimator:
+  kind: si
+  options:
+    steps: 16
+forcings:
+  cos_zenith: true
+  time_of_year: true
+  time_of_day: false
+  static_fields: []
+  scalar_fields: []

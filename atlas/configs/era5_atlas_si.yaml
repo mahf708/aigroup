@@ -1,0 +1,65 @@
+name: atlas-era5-si
+dt_hours: 6.0
+variables:
+  preset: era5_atlas
+grid:
+  nlat: 721
+  nlon: 1440
+  descending: true
+  periodic_lon: true
+  poles: true
+  name: latlon
+latent:
+  shape:
+  - 181
+  - 360
+  mode: bilinear
+  residual: true
+  history: 1
+  learned_encoder_dim: 256
+  learned_encoder_depth: 4
+backbone:
+  embed_dim_state: 2496
+  embed_dim_history: 832
+  combine: concat
+  depth: 12
+  num_heads: 13
+  mlp_ratio: 4.0
+  patch:
+  - 2
+  - 3
+  attention: global
+  pos_embed: sincos2d
+  qk_norm: false
+  grad_checkpoint_every: 2
+  noise_dim: null
+projector:
+  embed_dim_state: 1728
+  embed_dim_latent: 768
+  depth: 16
+  num_heads: 12
+  mlp_ratio: 4.0
+  attention: neighborhood
+  kernel:
+  - 3
+  - 3
+  pos_embed: sincos2d
+  qk_norm: false
+  grad_checkpoint_every: 2
+  neighborhood_chunk: 4096
+estimator:
+  kind: si
+  options:
+    epsilon: 1.0
+    sample_method: heun
+    steps: 60
+    noise_kind: spherical
+forcings:
+  cos_zenith: true
+  time_of_year: false
+  time_of_day: false
+  static_fields:
+  - surface_geopotential
+  - land_sea_mask
+  - sst_mask
+  scalar_fields: []

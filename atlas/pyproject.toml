@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "e3sm-atlas"
+version = "0.1.0"
+description = "Flexible ATLAS (Atmospheric Transformer in Latent Space) implementation for ERA5 and E3SM-style data, with latent-space interpretability tooling"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "BSD-3-Clause" }
+dependencies = ["torch>=2.1", "numpy>=1.24"]
+
+[project.optional-dependencies]
+data = ["xarray>=2023.1", "zarr>=2.14", "netcdf4", "dask"]
+analysis = ["xarray>=2023.1", "matplotlib>=3.7", "pyyaml>=6.0"]
+sphere = ["torch-harmonics>=0.6"]
+dev = ["pytest>=7", "pyyaml>=6.0"]
+all = [
+  "xarray>=2023.1", "zarr>=2.14", "netcdf4", "dask",
+  "matplotlib>=3.7", "pyyaml>=6.0", "torch-harmonics>=0.6", "pytest>=7",
+]
+
+[project.scripts]
+atlas = "atlas.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/atlas"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "UP", "B", "SIM"]
+# SIM118: `Recorder.keys()` returns an ordered list, not a dict view -- `in`
+# would not be equivalent and iterating it is deliberate.
+ignore = ["B008", "E741", "SIM118"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501", "SIM117"]

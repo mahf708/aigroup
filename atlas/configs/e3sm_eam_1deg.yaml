@@ -1,0 +1,65 @@
+name: atlas-e3sm-eam-1deg
+dt_hours: 6.0
+variables:
+  preset: e3sm_eam_24lev
+grid:
+  nlat: 180
+  nlon: 360
+  descending: false
+  periodic_lon: true
+  poles: false
+  name: latlon
+latent:
+  shape:
+  - 45
+  - 90
+  mode: area
+  residual: true
+  history: 1
+  learned_encoder_dim: 256
+  learned_encoder_depth: 4
+backbone:
+  embed_dim_state: 1024
+  embed_dim_history: 384
+  combine: concat
+  depth: 12
+  num_heads: 8
+  mlp_ratio: 4.0
+  patch:
+  - 3
+  - 3
+  attention: global
+  pos_embed: latlon
+  qk_norm: false
+  grad_checkpoint_every: 2
+  noise_dim: null
+projector:
+  embed_dim_state: 768
+  embed_dim_latent: 384
+  depth: 10
+  num_heads: 8
+  mlp_ratio: 4.0
+  attention: neighborhood
+  kernel:
+  - 3
+  - 3
+  pos_embed: latlon
+  qk_norm: false
+  grad_checkpoint_every: 2
+  neighborhood_chunk: 4096
+estimator:
+  kind: si
+  options:
+    steps: 40
+    sample_method: heun
+forcings:
+  cos_zenith: true
+  time_of_year: true
+  time_of_day: false
+  static_fields:
+  - PHIS
+  - LANDFRAC
+  - OCNFRAC
+  scalar_fields:
+  - co2vmr
+  - solar_constant
