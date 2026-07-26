@@ -3,3 +3,11 @@ site
 
 # any cache
 .cache
+
+# python bytecode
+__pycache__
+*.pyc
+
+# build trees
+build/
+build-*/
