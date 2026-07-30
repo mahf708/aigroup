@@ -1,0 +1,70 @@
+# ==============================================================================
+# Smoke test: the full U-Cast pipeline on synthetic data, small enough for a CPU.
+#
+#   ucast summary --config configs/synthetic_smoke.yaml
+#   ucast train   --config configs/synthetic_smoke.yaml
+#   ucast train   --config configs/synthetic_smoke.yaml \
+#                 train.stage=probabilistic train.max_epochs=2 \
+#                 train.init_from=runs/smoke/last.ckpt train.output_dir=runs/smoke_prob
+#
+# Use this to validate a new cluster, dataset adapter or config change before
+# spending GPU hours on the real thing.
+# ==============================================================================
+name: ucast-smoke
+
+grid:
+  num_lat: 32
+  num_lon: 64
+
+model:
+  model_channels: 32
+  channel_mult: [1, 2]
+  num_blocks: 1
+  attn_levels: [-1]
+  channels_per_head: 16
+  dropout: 0.1
+
+window: 2
+step_hours: 12
+
+data:
+  builder: synthetic
+  common:
+    num_lat: 32
+    num_lon: 64
+    num_times: 128
+  train:
+    seed: 0
+  val:
+    seed: 1
+    num_times: 48
+  statistics: compute
+  compute_statistics_samples: 32
+  batch_size: 8
+  batch_size_per_device: 4
+  eval_batch_size: 2
+  num_workers: 0
+  drop_last: true
+
+optimizer:
+  lr: 1.0e-3
+  weight_decay: 0.01
+  muon:
+    lr: 3.0e-3
+    weight_decay: 0.01
+  schedule:
+    warmup_steps: 5
+
+train:
+  stage: deterministic
+  max_epochs: 2
+  precision: fp32
+  ema_decay: 0.99
+  output_dir: runs/smoke
+  log_every: 5
+  monitor: val/avg/rmse/avg
+
+eval:
+  rollout_steps: 3
+  ensemble_size: 2
+  max_batches: 4

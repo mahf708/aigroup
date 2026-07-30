@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ucast"
+version = "0.1.0"
+description = "Flexible PyTorch implementation of U-Cast (Cachay et al., ICML 2026) for probabilistic weather/climate forecasting"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "torch>=2.1",
+    "numpy>=1.24",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Needed only for the xarray/zarr-backed datasets and NetCDF forecast output.
+data = ["xarray>=2023.9", "zarr>=2.16", "dask", "netCDF4"]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+ucast = "ucast.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ucast*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "B", "C4", "RET", "SIM"]
+ignore = ["B905", "C408", "SIM105"]

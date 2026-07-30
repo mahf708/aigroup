@@ -1,0 +1,104 @@
+# ==============================================================================
+# U-Cast STAGE 1 -- deterministic pre-training on ERA5 1.5 degrees (weighted MAE).
+#
+# Reproduces the paper's setup: 895M-parameter U-Net, 83-channel state, two past
+# frames, 12-hourly steps, residual prediction, Muon + AdamW, 100 epochs.
+#
+#   ucast train --config configs/era5_1p5deg_stage1.yaml \
+#       data.common.path=/path/to/1959-2023_01_10-6h-240x121_equiangular_with_poles_conservative.zarr \
+#       data.statistics=/path/to/wb2_statistics_dir
+#
+# Reference budget: ~10 H200-GPU-days for this stage.  Lower
+# data.batch_size_per_device if you run out of memory -- gradient accumulation
+# keeps the effective batch at 48 either way.
+# ==============================================================================
+name: ucast-era5-1p5deg-stage1
+
+grid:
+  num_lat: 121
+  num_lon: 240
+  with_poles: true
+  periodic_longitude: true
+
+# Two past frames in, one 12-hour step out.
+window: 2
+step_hours: 12
+
+# 5 surface + 6 atmospheric x 13 pressure levels = 83 channels.
+input_variables:
+  - mean_sea_level_pressure
+  - 10m_u_component_of_wind
+  - 10m_v_component_of_wind
+  - 2m_temperature
+  - sea_surface_temperature
+  - {name: geopotential, levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]}
+  - {name: specific_humidity, levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]}
+  - {name: temperature, levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]}
+  - {name: u_component_of_wind, levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]}
+  - {name: v_component_of_wind, levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]}
+  - {name: vertical_velocity, levels: [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 925, 1000]}
+# output_variables defaults to input_variables. To keep SST prescribed rather
+# than forecast, list every variable except sea_surface_temperature here.
+
+model:
+  model_channels: 320            # ~895M parameters with the settings below
+  channel_mult: [1, 2, 3, 4]
+  num_blocks: 4
+  attn_levels: [-2, -1]          # self-attention at the two coarsest levels
+  channels_per_head: 64
+  dropout: 0.1                   # regulariser now, ensemble generator in Stage 2
+  latitude_padding: zeros        # "replicate" avoids zero-padding across the poles
+  pool_ceil_mode: true
+
+data:
+  builder: era5                  # ucast.data.xarray_dataset:XarrayForecastDataset
+  common:
+    path: ???                    # REQUIRED: the WeatherBench-2 ERA5 .zarr (local path or gs:// URL)
+    step_hours: 12
+    static_fields: [land_sea_mask, geopotential_at_surface]
+    clock_forcings_enabled: true
+    fill_values: {sea_surface_temperature: min}   # WB2 SST is NaN over land
+  train:
+    time_range: ["1979-01-01", "2018-12-31"]
+  val:
+    time_range: ["2020-01-01", "2020-12-31"]
+    initial_hours: [0, 12]       # the WeatherBench-2 evaluation protocol
+    max_items: 32                # a quick in-training check; score the full year with `ucast score`
+  # Point this at a directory holding era5_mean.nc / era5_std.nc / era5_residual_std.nc,
+  # or a .npz written by `ucast stats`, or "compute" to estimate them on the fly.
+  statistics: ???
+  batch_size: 48                 # effective (global) batch size
+  batch_size_per_device: 8
+  eval_batch_size: 4
+  num_workers: 8
+  prefetch_factor: 3
+  persistent_workers: true
+
+optimizer:
+  lr: 3.0e-4                     # AdamW: biases, norms, stem and output projection
+  weight_decay: 0.1
+  betas: [0.9, 0.95]
+  muon:
+    lr: 3.0e-3                   # Muon: hidden weight matrices
+    weight_decay: 0.03
+    momentum: 0.95
+  schedule:
+    name: cosine
+    warmup_steps: 1500
+
+train:
+  stage: deterministic           # -> loss wmae, 1 member per step
+  max_epochs: 100
+  grad_clip_norm: 1.0
+  precision: bf16
+  ema_decay: 0.9999
+  seed: 11
+  output_dir: runs/era5_stage1
+  log_every: 50
+  monitor: val/avg/rmse/avg      # no ensemble in Stage 1, so score on RMSE
+  monitor_mode: min
+
+eval:
+  rollout_steps: 4               # 2 days at 12-hourly steps, during training
+  ensemble_size: 1
+  use_ema: true

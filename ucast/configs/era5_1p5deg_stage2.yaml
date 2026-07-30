@@ -1,0 +1,48 @@
+# ==============================================================================
+# U-Cast STAGE 2 -- probabilistic CRPS fine-tuning.
+#
+# Inherits everything from Stage 1 and changes only what the paper changes: the
+# loss becomes the fair CRPS, each step draws 2 MC-dropout members, the schedule
+# is 8 epochs at a higher learning rate, and training warm-starts from the Stage-1
+# checkpoint.  This stage is ~15% of the total training budget.
+#
+#   ucast train --config configs/era5_1p5deg_stage2.yaml \
+#       data.common.path=/path/to/era5.zarr data.statistics=/path/to/stats \
+#       train.init_from=runs/era5_stage1/last.ckpt
+#
+# STAGE 3 (deep ensemble) -- repeat this stage K times from the *same* Stage-1
+# checkpoint with different seeds, then score them together:
+#
+#   for SEED in 11 22 33 44; do
+#     ucast train --config configs/era5_1p5deg_stage2.yaml \
+#         data.common.path=... data.statistics=... \
+#         train.init_from=runs/era5_stage1/last.ckpt \
+#         train.seed=$SEED train.output_dir=runs/era5_stage2_seed$SEED
+#   done
+#   ucast score --checkpoint 'runs/era5_stage2_seed*/best.ckpt' \
+#       --ensemble-size 8 --steps 30 --batch-size 1
+# ==============================================================================
+base: era5_1p5deg_stage1.yaml
+
+name: ucast-era5-1p5deg-stage2
+
+optimizer:
+  lr: 7.0e-5                     # AdamW subset: lower than Stage 1
+  muon:
+    lr: 7.0e-3                   # Muon: higher than Stage 1
+  schedule:
+    warmup_steps: 1500           # same warmup, decayed over the much shorter schedule
+
+train:
+  stage: probabilistic           # -> loss wcrps, 2 members per step
+  max_epochs: 8
+  output_dir: runs/era5_stage2
+  init_from: ???                 # REQUIRED: the Stage-1 checkpoint to warm-start from
+  monitor: val/avg/crps/avg
+  monitor_mode: min
+
+eval:
+  rollout_steps: 4
+  ensemble_size: 4               # MC-dropout members during in-training validation
+  members_per_forward: 4
+  mc_dropout: true
