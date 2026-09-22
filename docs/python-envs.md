@@ -40,10 +40,7 @@ uv venv --python 3.11
 # Activate
 source .venv/bin/activate
 
-# Install dependencies from requirements.txt
-uv pip install -r requirements.txt
-
-# Install ACE in editable mode
+# Install ACE in editable mode (pulls dependencies from pyproject.toml)
 uv pip install -e .
 ```
 

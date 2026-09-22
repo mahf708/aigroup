@@ -1,0 +1,179 @@
+name: tutorial-validation
+
+# Symbolic freshness check for the tutorial docs in docs/. Mirrors the
+# install steps in docs/python-envs.md, extracts every fenced yaml config
+# block from the tutorial pages, and feeds each through
+# `fme.ace.validate_config` against the current E3SM-Project/ace main.
+# Also verifies the HuggingFace artifacts the configs reference still
+# exist. No GPU, no large downloads, no training/inference.
+on:
+  schedule:
+    - cron: "0 7 * * 1"  # Mondays 07:00 UTC
+  push:
+    branches: ["main"]
+    paths:
+      - .github/workflows/tutorial-validation.yml
+      - scripts/extract_doc_configs.py
+      - scripts/verify_hf_artifacts.py
+      - docs/ace2-inference.md
+      - docs/ace2-workflow.md
+      - docs/ace2-spatial-decomp.md
+      - docs/python-envs.md
+  pull_request:
+    branches: ["main"]
+    paths:
+      - .github/workflows/tutorial-validation.yml
+      - scripts/extract_doc_configs.py
+      - scripts/verify_hf_artifacts.py
+      - docs/ace2-inference.md
+      - docs/ace2-workflow.md
+      - docs/ace2-spatial-decomp.md
+      - docs/python-envs.md
+  workflow_dispatch:
+    inputs:
+      ace_ref:
+        description: "git ref of E3SM-Project/ace to validate against"
+        type: string
+        default: "main"
+
+concurrency:
+  group: tutorial-validation
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: ${{ github.repository == 'E3SM-Project/aigroup' || github.repository == 'mahf708/aigroup' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+    defaults:
+      run:
+        shell: bash -leo pipefail {0}
+    env:
+      # If ace ever imports torch eagerly, keep CUDA out of the picture on
+      # the runner.
+      CUDA_VISIBLE_DEVICES: ""
+      # Only consumed if the HF repos go gated later.
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      ACE_REF: ${{ inputs.ace_ref || 'main' }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      # ---- Phase 1: env smoke (mirrors docs/python-envs.md) ----
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Clone ace
+        run: git clone --depth 1 --branch "$ACE_REF" https://github.com/E3SM-Project/ace.git
+
+      - name: Install ace (uv venv + editable install from pyproject)
+        working-directory: ace
+        run: |
+          uv venv --python 3.11
+          source .venv/bin/activate
+          uv pip install -e .
+
+      - name: Smoke imports + validate_config entry point
+        working-directory: ace
+        run: |
+          source .venv/bin/activate
+          # Light import: the validate_config CLI module is what phase 2
+          # actually exercises, so prove it loads on CPU-only Ubuntu.
+          python -c "import fme.ace.validate_config; print(fme.ace.validate_config.__file__)"
+          python -m fme.ace.validate_config --help
+
+      # ---- Phase 2: extract yaml blocks from docs and validate each ----
+      - name: Extract config blocks from docs
+        run: python3 scripts/extract_doc_configs.py docs/ extracted/
+
+      - name: Validate inference configs against ace schema
+        run: |
+          source ace/.venv/bin/activate
+          shopt -s nullglob
+          files=(extracted/inference/*.yaml)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "error: no inference configs extracted" >&2
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            echo "::group::validate_config inference $f"
+            python -m fme.ace.validate_config "$f" --config_type inference
+            echo "::endgroup::"
+          done
+
+      - name: Validate train configs against ace schema
+        run: |
+          source ace/.venv/bin/activate
+          shopt -s nullglob
+          files=(extracted/train/*.yaml)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "error: no train configs extracted" >&2
+            exit 1
+          fi
+          for f in "${files[@]}"; do
+            echo "::group::validate_config train $f"
+            python -m fme.ace.validate_config "$f" --config_type train
+            echo "::endgroup::"
+          done
+
+      # ---- Phase 3: assert HF artifacts referenced by configs still exist ----
+      - name: Install huggingface_hub
+        run: |
+          source ace/.venv/bin/activate
+          uv pip install huggingface_hub
+
+      - name: Verify HuggingFace artifacts
+        run: |
+          source ace/.venv/bin/activate
+          python3 scripts/verify_hf_artifacts.py
+
+      # ---- Phase 4: open / refresh a tracking issue on failure ----
+      - name: Report failure to issue tracker
+        if: failure() && github.event_name != 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const title = 'Tutorial validation failed';
+            const labelName = 'tutorial-staleness';
+            const body = [
+              'The weekly `tutorial-validation` workflow failed.',
+              '',
+              `Run: ${runUrl}`,
+              '',
+              'This usually means an upstream change in [E3SM-Project/ace](https://github.com/E3SM-Project/ace)',
+              'or a moved/renamed HuggingFace artifact has invalidated one of our docs.',
+              'See the workflow logs for the failing phase.',
+            ].join('\n');
+
+            try {
+              await github.rest.issues.createLabel({
+                owner, repo, name: labelName, color: 'd73a4a',
+                description: 'Tutorial docs appear stale vs. upstream ace',
+              });
+            } catch (e) {
+              // Label likely already exists; ignore.
+            }
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: labelName, per_page: 100,
+            });
+            const existing = issues.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body: `Validation failed again — ${runUrl}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner, repo, title, body, labels: [labelName],
+              });
+            }
