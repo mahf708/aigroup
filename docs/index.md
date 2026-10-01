@@ -31,3 +31,11 @@ We share docs, scripts, examples, and prototypes for E3SM AI efforts.
 ## Getting Started
 
 To access our quick guides ane examples, click on the **Quick Guides** tab at the top of the page.
+
+![Tutorial validation](https://github.com/E3SM-Project/aigroup/actions/workflows/tutorial-validation.yml/badge.svg)
+
+!!! note "Kept fresh by CI"
+    The install steps and config snippets in our tutorials are exercised
+    weekly against the current [`E3SM-Project/ace`](https://github.com/E3SM-Project/ace)
+    `main`. If the badge above is red, some of the instructions here may
+    be stale — please [file an issue](https://github.com/E3SM-Project/aigroup/issues).
