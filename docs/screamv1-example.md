@@ -1,17 +1,47 @@
-# SCREAM v1 Data Generation Example
+# EAMxx Data Generation Example
 
-In developing SCREAM v1, the team made a concerted effort to
-generalize and streamline variable output capability to allow
-for flexible and hopefully scientifically valuable capabilities.
-In this example, we will use SCREAM v1 data to generate all the
-data we need to train ACE2 on the fly (during runtime) without
-the need for post-processing or outputing expensive 3D variables.
+In developing EAMxx (formerly known as SCREAM v1), the team made a
+concerted effort to generalize and streamline variable output capability
+to allow for flexible and hopefully scientifically valuable capabilities.
+In this example, we will use EAMxx to generate all the data we need to
+train ACE2 on the fly (during runtime) without the need for
+post-processing or outputting expensive 3D variables.
 Please refer to [ACE2-ERA5 Training Workflow](ace2-workflow.md) for more
 information about ACE2 training.
 
+!!! warning "Cost"
+    These runs will be **very expensive** unless you run at low resolution
+    (e.g., `ne30pg2_ne30pg2` as used in the example below). Higher
+    resolutions (e.g., `ne120pg2`/`ne1024pg2`) require careful planning of
+    node hours and storage before launching.
+
+## What ACE needs as training input
+
+ACE2 is trained on a fixed set of 2D fields. The variables ACE needs as
+inputs (`in_names`) and predicts as outputs (`out_names`) are listed in the
+[ACE2-ERA5 Training Workflow](ace2-workflow.md#2-prepare-training-configuration)
+sample config. The yaml blocks in this guide produce that same set of
+fields directly from an EAMxx run:
+
+- **8 vertical bins** of `air_temperature_*`, `eastward_wind_*`,
+  `northward_wind_*`, and `total_specific_humidity_*` (mapped to ACE's
+  `specific_total_water_*`), computed as pressure-weighted vertical
+  averages over level ranges in the `6hi.yaml` output stream.
+- **Surface and TOA radiative fluxes** (`DSWRFtoa`, `DLWRFtoa`,
+  `ULWRFtoa`, `USWRFtoa`, `DSWRFsfc`, `DLWRFsfc`, `ULWRFsfc`, `USWRFsfc`),
+  surface turbulent fluxes (`LHTFLsfc`, `SHTFLsfc`), precipitation
+  (`PRATEsfc`), and surface geopotential height (`HGTsfc`) in the
+  `6ha.yaml` output stream.
+- **Land / ocean / sea-ice fractions** (`land_fraction`, `ocean_fraction`,
+  `sea_ice_fraction`), surface pressure (`PRESsfc`), and surface
+  temperature (`surface_temperature`) in `6hi.yaml`.
+- **Advective total water tendency**
+  (`tendency_of_total_water_path_due_to_advection`) computed from HOMME
+  process tendencies.
+
 ## Key insights
 
-We use the following capabilities from SCREAM v1:
+We use the following capabilities from EAMxx:
 
 - binary operations (`plus`, `over`)
 - vertical reduction (`vert_avg`)
@@ -33,7 +63,32 @@ All these capabilities are [documented in EAMxx user guide](https://docs.e3sm.or
 
 ## Full script
 
-A full script can be found below.
+A full script can be found below. The ACE-training output is configured
+inside the `runtime_options()` function. The two key blocks are:
+
+- The **`6hi.yaml`** heredoc (instantaneous 6-hourly state). This block defines
+  vertically-binned `air_temperature_*`, `eastward_wind_*`, `northward_wind_*`,
+  and `total_specific_humidity_*` plus surface fields (`PRESsfc`,
+  `surface_temperature`, `land_fraction`, `ocean_fraction`,
+  `sea_ice_fraction`) and the advective water-path tendency. Output cadence
+  is set by `frequency: 6` / `frequency_units: nhours`.
+- The **`6ha.yaml`** heredoc (6-hourly averages). This block defines the
+  radiative fluxes (`DSWRFtoa`, `DSWRFsfc`, `DLWRFtoa`, `DLWRFsfc`,
+  `ULWRFtoa`, `ULWRFsfc`, `USWRFtoa`, `USWRFsfc`), surface turbulent fluxes
+  (`LHTFLsfc`, `SHTFLsfc`), precipitation (`PRATEsfc`), and surface
+  geopotential height (`HGTsfc`).
+
+Both yaml files are registered with the EAMxx output manager via the
+`./atmchange output_yaml_files=...` calls immediately after the second
+heredoc. If you only want to change which variables ACE sees, you should
+only need to edit these two `cat << EOF` blocks; everything else in the
+script is standard E3SM case setup.
+
+The HOMME process tendencies needed for
+`tendency_of_total_water_path_due_to_advection` are turned on by the two
+`./atmchange ...compute_tendencies=qr,qv,qi,qc` lines higher up in
+`runtime_options()` &mdash; if you remove that field from `6hi.yaml`, remove
+those lines as well.
 
 ??? example "SCREAM v1 run script"
     ```bash
@@ -179,7 +234,7 @@ A full script can be found below.
 
         echo $'\n----- Starting fetch_code -----\n'
         local path=${CODE_ROOT}
-        local repo=scream
+        local repo=E3SM
 
         echo "Cloning $repo repository branch $BRANCH under $path"
         if [ -d "${path}" ]; then
